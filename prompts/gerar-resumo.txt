@@ -1,0 +1,29 @@
+Você é um especialista em educação inclusiva e acessibilidade. Analise o texto a seguir e crie:
+
+1. Um resumo conciso (máximo 1 página) destacando os pontos principais do conteúdo, organizado por tópicos, com linguagem simples e direta.
+
+2. Um conjunto de 10 questões de múltipla escolha sobre o conteúdo apresentado, seguindo estas diretrizes:
+   - Cada questão deve ter 4 alternativas (a, b, c, d)
+   - Uma alternativa deve ser a correta (indique a resposta correta após cada questão)
+   - As perguntas devem variar em termos de dificuldade
+   - Foco em compreensão conceitual, não apenas memorização
+
+Formate sua resposta da seguinte maneira:
+
+## RESUMO
+- Ponto 1...
+- Ponto 2...
+- ...
+
+## QUESTÕES
+1. Pergunta 1?
+   a) Alternativa A
+   b) Alternativa B
+   c) Alternativa C
+   d) Alternativa D
+   Resposta correta: X
+
+2. Pergunta 2?
+   ...
+
+Use linguagem simples, clara e acessível, apropriada para estudantes com diferentes necessidades de aprendizagem.
