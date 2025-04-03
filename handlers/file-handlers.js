@@ -1,18 +1,23 @@
 const { ipcMain } = require("electron");
 const { ROOT_FOLDER_ID } = require("../config/app-config");
-const { listFolders, listFiles } = require("../services/drive-service");
+const {
+  listFolders,
+  listFiles,
+  downloadFile,
+  getFileContent,
+} = require("../services/gdrive");
 
 /**
- * Configura os handlers IPC relacionados a listagem de arquivos e pastas
- * @param {BrowserWindow} mainWindow - Janela principal do Electron
+ * Configura os handlers IPC relacionados a arquivos
+ * @param {BrowserWindow} mainWindow - Janela principal do Electron (opcional)
  */
-function setupFileHandlers(mainWindow) {
+function setupFileHandlers(mainWindow = null) {
   /**
-   * Listar pastas dentro de uma pasta específica
+   * Listar pastas dentro de uma pasta específica (nova API)
    */
   ipcMain.handle("listar-pastas", async (event, parentFolderId = null) => {
     try {
-      const folders = await listFolders(parentFolderId, ROOT_FOLDER_ID);
+      const folders = await listFolders(parentFolderId);
       return folders;
     } catch (error) {
       console.error("Erro ao listar pastas:", error.message);
@@ -21,11 +26,11 @@ function setupFileHandlers(mainWindow) {
   });
 
   /**
-   * Listar arquivos .docx e Documentos Google dentro de uma pasta específica
+   * Listar arquivos dentro de uma pasta específica (nova API)
    */
   ipcMain.handle("listar-arquivos", async (event, folderId = null) => {
     try {
-      const files = await listFiles(folderId, ROOT_FOLDER_ID);
+      const files = await listFiles(folderId);
       return files;
     } catch (error) {
       console.error("Erro ao listar arquivos:", error.message);
@@ -34,25 +39,80 @@ function setupFileHandlers(mainWindow) {
   });
 
   /**
-   * Handler para solicitar o status atual de um arquivo em processamento
+   * Listar pastas dentro de uma pasta específica (API legada)
    */
-  ipcMain.handle("get-resource-status", async (event, fileId) => {
+  ipcMain.handle("get-folders", async (event, parentFolderId = null) => {
     try {
-      // Este handler permite ao frontend verificar o status atual dos recursos
-      // para um determinado arquivo, útil quando a aplicação é reiniciada
-
-      // Na implementação real, você poderia armazenar esses estados em um banco de dados
-      // ou em um arquivo local para persistência
-
-      // Por enquanto, apenas enviamos um status "not found" se o arquivo não estiver
-      // em processamento ativo
-
-      return {
-        found: false,
-        message: "Nenhum processamento ativo encontrado para este arquivo",
-      };
+      const folders = await listFolders(parentFolderId);
+      return folders;
     } catch (error) {
-      console.error("Erro ao obter status de recursos:", error);
+      console.error("Erro ao listar pastas (legacy):", error.message);
+      return [];
+    }
+  });
+
+  /**
+   * Listar arquivos dentro de uma pasta específica (API legada)
+   */
+  ipcMain.handle("get-files", async (event, folderId = null) => {
+    try {
+      const files = await listFiles(folderId);
+      return files;
+    } catch (error) {
+      console.error("Erro ao listar arquivos (legacy):", error.message);
+      return [];
+    }
+  });
+
+  /**
+   * Obter conteúdo de arquivo do Google Drive
+   */
+  ipcMain.handle("get-file-content", async (event, fileId) => {
+    console.log("Recebida solicitação para obter conteúdo do arquivo:", fileId);
+
+    try {
+      const result = await getFileContent(fileId);
+
+      if (result.error) {
+        console.error("Erro ao obter conteúdo:", result.error);
+        return { error: result.error };
+      }
+
+      console.log("Arquivo obtido com sucesso:", result.name);
+      console.log("Tipo MIME:", result.mimeType);
+      console.log("Tamanho do conteúdo (bytes):", result.content.length);
+
+      return result;
+    } catch (error) {
+      console.error("Erro no handler get-file-content:", error);
+      return { error: error.message };
+    }
+  });
+
+  /**
+   * Baixar arquivo do Google Drive
+   */
+  ipcMain.on("download-resource", async (event, fileId) => {
+    try {
+      const filePath = await downloadFile(fileId);
+      event.sender.send("download-complete", { success: true, filePath });
+    } catch (error) {
+      console.error("Erro ao baixar arquivo:", error);
+      event.sender.send("download-complete", {
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+  /**
+   * Verifica status de processamento de um recurso
+   */
+  ipcMain.handle("get-resource-status", async (event, resourceId) => {
+    try {
+      return { status: "not_found" };
+    } catch (error) {
+      console.error("Erro ao verificar status do recurso:", error);
       return { error: error.message };
     }
   });

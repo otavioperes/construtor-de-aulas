@@ -68,24 +68,14 @@
     let currentFolderName = "Pasta Raiz"; // Nome da pasta atual
     let folderStructure = []; // Estrutura de pastas
 
-    // Armazenar o estado de processamento de cada arquivo
-    let processedFiles = {};
-    // Formato: { fileId: { status: 'initial'|'processing'|'completed', resources: { braille: url, audio: url, pdf: url, resumo: url } } }
-
     window.addEventListener("DOMContentLoaded", async () => {
-      // 0) Carregar o estado dos arquivos processados do localStorage
-      loadProcessedFilesState();
-
-      // 1) Configurar listener para atualizações de recursos
-      setupResourceUpdateListener();
-
-      // 2) Carregar a árvore de pastas
+      // 1) Carregar a árvore de pastas
       await loadFolderTree();
 
-      // 3) Listar arquivos da pasta raiz
+      // 2) Listar arquivos da pasta raiz
       await loadFilesFromFolder(currentFolderId);
 
-      // 4) Configurar busca
+      // 3) Configurar busca
       const searchInput = document.getElementById("search-input");
       searchInput.addEventListener("input", (e) => {
         searchQuery = e.target.value.toLowerCase();
@@ -93,757 +83,180 @@
         renderFiles();
       });
 
-      // 5) Configurar botão de atualizar pastas
+      // 4) Configurar botão de atualizar pastas
       document.getElementById("refresh-folders").addEventListener("click", async () => {
         await loadFolderTree();
       });
+
+      // 5) Configurar listeners de eventos de download
+      ipcRenderer.on("download-complete", (event, data) => {
+        if (data.success) {
+          alert("Arquivo baixado com sucesso!");
+        }
+      });
+
+      ipcRenderer.on("download-error", (event, data) => {
+        if (!data.success) {
+          alert("Erro ao baixar arquivo: " + data.error);
+        }
+      });
     });
 
-    // Função para salvar o estado dos arquivos processados
-    function saveProcessedFilesState() {
-      try {
-        localStorage.setItem('processedFiles', JSON.stringify(processedFiles));
-        console.log('Estado dos arquivos processados salvo');
-      } catch (e) {
-        console.error('Erro ao salvar estado dos arquivos processados:', e);
-      }
-    }
-
-    // Função para carregar o estado dos arquivos processados
-    function loadProcessedFilesState() {
-      try {
-        // Limpar o estado dos arquivos processados ao iniciar o aplicativo
-        localStorage.removeItem('processedFiles');
-        console.log('Estado dos arquivos processados limpo');
-
-        // Reinicializar para um objeto vazio
-        processedFiles = {};
-      } catch (e) {
-        console.error('Erro ao limpar estado dos arquivos processados:', e);
-        processedFiles = {};
-      }
-    }
-
-    // Configurar listener para atualizações de recursos enviadas pelo backend
-    function setupResourceUpdateListener() {
-      // Listener para atualizações individuais de recursos
-      ipcRenderer.on('resource-update', (event, data) => {
-        console.log('Atualização de recurso recebida:', data);
-
-        const { fileId, status, results, resourceType, result } = data;
-
-
-        // Garantir que o arquivo existe no estado
-        if (!processedFiles[fileId]) {
-          processedFiles[fileId] = {
-            status: 'processing',
-            resources: {
-              braille: null,
-              audio: null,
-              pdf: null,
-              resumo: null
-            },
-            resourceStatus: {
-              braille: "pending",
-              audio: "pending",
-              pdf: "pending",
-              questoes: "pending"
-            }
-          };
-        }
-
-        // Garantir que temos o objeto de status para cada recurso
-        if (!processedFiles[fileId].resourceStatus) {
-          processedFiles[fileId].resourceStatus = {
-            braille: "pending",
-            audio: "pending",
-            pdf: "pending",
-            questoes: "pending"
-          };
-        }
-
-        // Atualização de múltiplos recursos de uma vez
-        if (status && results) {
-          // Atualizar status para cada recurso
-          Object.keys(status).forEach(type => {
-            // Atualizar o status de processamento do recurso
-            processedFiles[fileId].resourceStatus[type] = status[type];
-
-            if (status[type] === 'completed' && results[type]) {
-              // Mapear os resultados para os tipos corretos de recursos
-              console.log(`Processando resultado para ${type}:`, results[type]);
-
-              if (type === 'audio') {
-                processedFiles[fileId].resources.audio = results[type].url || results[type].mp3Link || null;
-                console.log(`Link de áudio definido: ${processedFiles[fileId].resources.audio}`);
-              } else if (type === 'pdf') {
-                processedFiles[fileId].resources.pdf = results[type].url || results[type].pdfLink || null;
-                console.log(`Link de PDF definido: ${processedFiles[fileId].resources.pdf}`);
-              } else if (type === 'questoes') {
-                processedFiles[fileId].resources.resumo = results[type].url || results[type].questoesLink || null;
-                console.log(`Link de questões definido: ${processedFiles[fileId].resources.resumo}`);
-              }
-            }
-          });
-
-          // Verificar se todos os recursos foram processados
-          const allCompleted = Object.values(status).every(s => s === 'completed' || s === 'error');
-          // Verificar se pelo menos um recurso foi concluído com sucesso
-          const hasAnyCompleted = Object.values(status).some(s => s === 'completed');
-
-          if (allCompleted && hasAnyCompleted) {
-            processedFiles[fileId].status = 'completed';
-          }
-        }
-        // Atualização de um único recurso
-        else if (resourceType && result) {
-          // Atualizar o status deste recurso específico
-          processedFiles[fileId].resourceStatus = processedFiles[fileId].resourceStatus || {};
-          processedFiles[fileId].resourceStatus[resourceType] = data.status;
-
-          if (data.status === 'completed') {
-            // Atualizar o recurso específico
-            console.log(`Processando resultado para ${resourceType}:`, result);
-
-            if (resourceType === 'audio') {
-              processedFiles[fileId].resources.audio = result.url || result.mp3Link || null;
-              console.log(`Link de áudio definido: ${processedFiles[fileId].resources.audio}`);
-            } else if (resourceType === 'pdf') {
-              processedFiles[fileId].resources.pdf = result.url || result.pdfLink || null;
-              console.log(`Link de PDF definido: ${processedFiles[fileId].resources.pdf}`);
-            } else if (resourceType === 'questoes') {
-              processedFiles[fileId].resources.resumo = result.url || result.questoesLink || null;
-              console.log(`Link de questões definido: ${processedFiles[fileId].resources.resumo}`);
-            }
-
-            // Verificar se todos os recursos foram processados
-            const allTypes = ['braille', 'audio', 'pdf', 'questoes'];
-            const allStatus = allTypes.map(type => processedFiles[fileId].resourceStatus?.[type] || 'pending');
-            const allProcessed = allStatus.every(s => s === 'completed' || s === 'error');
-
-            // Verificar se pelo menos um recurso está disponível
-            const hasAny = Object.values(processedFiles[fileId].resources).some(r => r !== null);
-
-            // Se todos os recursos foram processados e pelo menos um está disponível, mudar o status para 'completed'
-            if (allProcessed && hasAny) {
-              processedFiles[fileId].status = 'completed';
-            }
-          }
-        }
-
-        // Verificar se devemos armazenar o caminho local do arquivo para referência futura
-        if (data.localPath && !processedFiles[fileId].localPath) {
-          processedFiles[fileId].localPath = data.localPath;
-        }
-
-        // Salvar o estado atualizado
-        saveProcessedFilesState();
-
-        // Renderizar a interface atualizada
-        renderFiles();
-      });
-
-      // Listener para a atualização final quando todos os recursos estiverem processados
-      ipcRenderer.on('final-update', (event, data) => {
-        console.log('Atualização FINAL recebida:', JSON.stringify(data, null, 2));
-
-        const { fileId, status, results } = data;
-
-        // Garantir que o arquivo existe no estado
-        if (!processedFiles[fileId]) {
-          console.warn('Atualização final para arquivo inexistente:', fileId);
-          return;
-        }
-
-        // Atualizar o status para "completed"
-        processedFiles[fileId].status = 'completed';
-
-        // Atualizar status de recursos individuais
-        if (status) {
-          processedFiles[fileId].resourceStatus = status;
-        }
-
-        // Atualizar URLs de recursos - verificar detalhadamente cada recurso
-        if (results) {
-          // Para áudio
-          if (results.audio) {
-            const audioUrl = results.audio.mp3Link || results.audio.url;
-            if (audioUrl && typeof audioUrl === 'string' && audioUrl.trim() !== '') {
-              processedFiles[fileId].resources.audio = audioUrl;
-              console.log(`[FINAL] Link de áudio válido definido: ${audioUrl}`);
-            } else {
-              console.warn(`[FINAL] Link de áudio inválido:`, results.audio);
-            }
-          }
-
-          // Para PDF
-          if (results.pdf) {
-            const pdfUrl = results.pdf.pdfLink || results.pdf.url;
-            if (pdfUrl && typeof pdfUrl === 'string' && pdfUrl.trim() !== '') {
-              processedFiles[fileId].resources.pdf = pdfUrl;
-              console.log(`[FINAL] Link de PDF válido definido: ${pdfUrl}`);
-            } else {
-              console.warn(`[FINAL] Link de PDF inválido:`, results.pdf);
-            }
-          }
-
-          // Para questões
-          if (results.questoes) {
-            const questoesUrl = results.questoes.questoesLink || results.questoes.url;
-            if (questoesUrl && typeof questoesUrl === 'string' && questoesUrl.trim() !== '') {
-              processedFiles[fileId].resources.resumo = questoesUrl;
-              console.log(`[FINAL] Link de questões válido definido: ${questoesUrl}`);
-            } else {
-              console.warn(`[FINAL] Link de questões inválido:`, results.questoes);
-            }
-          }
-        }
-
-        // Debug de todos os recursos após atualização
-        console.log('[FINAL] Estado final dos recursos:', {
-          audio: processedFiles[fileId].resources.audio,
-          pdf: processedFiles[fileId].resources.pdf,
-          resumo: processedFiles[fileId].resources.resumo
-        });
-
-        // Salvar o estado atualizado
-        saveProcessedFilesState();
-
-        // Atualizar a interface
-        console.log('Renderizando interface após atualização final');
-        renderFiles();
-      });
-    }
-
-    // Carregar a estrutura de pastas e renderizar a árvore
+    // Função para carregar a árvore de pastas
     async function loadFolderTree() {
       try {
-        document.getElementById("folder-tree").innerHTML = '<div class="loading-message">Carregando pastas...</div>';
+        // Primeiro, carregar as pastas do nível raiz
+        const rootFolders = await ipcRenderer.invoke('get-folders');
+        folderStructure = rootFolders;
 
-        // Buscar pastas de primeiro nível
-        const rootFolders = await ipcRenderer.invoke("listar-pastas");
+        // Para cada pasta, carregar suas subpastas
+        for (const folder of rootFolders) {
+          folder.subFolders = await ipcRenderer.invoke('get-folders', folder.id);
+        }
 
-        // Carregar todas as subpastas recursivamente
-        folderStructure = await loadAllSubfolders(rootFolders);
-
-        renderFolderTree();
+        renderFolderTree(folderStructure);
       } catch (error) {
-        console.error("Erro ao carregar pastas:", error);
-        document.getElementById("folder-tree").innerHTML = '<div class="error-message">Erro ao carregar pastas</div>';
+        console.error('Erro ao carregar árvore de pastas:', error);
       }
     }
 
-    // Função recursiva para carregar todas as subpastas
-    async function loadAllSubfolders(folders) {
-      const result = [...folders]; // Copiar o array original
+    // Função para renderizar a árvore de pastas
+    function renderFolderTree(folders, parentElement = null) {
+      const container = parentElement || document.getElementById('folder-tree');
 
-      // Para cada pasta, carregar suas subpastas
-      for (const folder of result) {
-        // Buscar subpastas desta pasta
-        const subfolders = await ipcRenderer.invoke("listar-pastas", folder.id);
-
-        // Se houver subpastas, carregá-las recursivamente
-        if (subfolders.length > 0) {
-          folder.subfolders = await loadAllSubfolders(subfolders);
-        } else {
-          folder.subfolders = [];
-        }
+      if (!parentElement) {
+        container.innerHTML = ''; // Limpar apenas no nível raiz
       }
 
-      return result;
-    }
-
-    // Renderizar a árvore de pastas
-    function renderFolderTree() {
-      const folderTreeElement = document.getElementById("folder-tree");
-      folderTreeElement.innerHTML = '';
-
-      // Adicionar "Pasta Raiz"
-      const rootFolderItem = document.createElement("div");
-      rootFolderItem.className = "folder-item" + (currentFolderId === null ? " selected" : "");
-      rootFolderItem.innerHTML = `
-        <div class="folder-name" data-folder-id="">
-          <i class="fas fa-folder"></i> Pasta Raiz
-        </div>
-      `;
-      rootFolderItem.addEventListener("click", () => selectFolder(null, "Pasta Raiz"));
-      folderTreeElement.appendChild(rootFolderItem);
-
-      // Renderizar todas as pastas e subpastas em níveis
-      renderFolders(folderStructure, folderTreeElement, 0);
-
-      if (folderStructure.length === 0) {
-        folderTreeElement.innerHTML += '<div class="empty-message">Nenhuma pasta encontrada</div>';
-      }
-    }
-
-    // Função recursiva para renderizar pastas e subpastas
-    function renderFolders(folders, parentElement, level) {
       folders.forEach(folder => {
-        const folderItem = document.createElement("div");
-        folderItem.className = "folder-item" + (folder.id === currentFolderId ? " selected" : "");
+        const folderElement = document.createElement('div');
+        folderElement.className = 'folder-item';
 
-        // Adicionar estilo de indentação baseado no nível
-        if (level > 0) {
-          folderItem.classList.add("subfolder");
-          folderItem.style.marginLeft = `${level * 1.2}rem`;
-        }
-
-        folderItem.innerHTML = `
-          <div class="folder-name" data-folder-id="${folder.id}">
-            <i class="fas fa-folder"></i> ${folder.name}
-          </div>
+        // Criar o conteúdo da pasta
+        const folderContent = document.createElement('div');
+        folderContent.className = 'folder-content';
+        folderContent.innerHTML = `
+          <i class="fas fa-folder"></i>
+          <span>${folder.name}</span>
         `;
 
-        // Adicionar evento de clique para selecionar a pasta
-        folderItem.querySelector(".folder-name").addEventListener("click", () => selectFolder(folder.id, folder.name));
+        // Adicionar evento de clique na pasta
+        folderContent.addEventListener('click', () => {
+          currentFolderId = folder.id;
+          currentFolderName = folder.name;
+          document.getElementById('current-folder-name').textContent = folder.name;
+          loadFilesFromFolder(folder.id);
+        });
 
-        parentElement.appendChild(folderItem);
+        folderElement.appendChild(folderContent);
 
-        // Renderizar recursivamente todas as subpastas
-        if (folder.subfolders && folder.subfolders.length > 0) {
-          renderFolders(folder.subfolders, parentElement, level + 1);
+        // Se a pasta tiver subpastas, criar um container para elas
+        if (folder.subFolders && folder.subFolders.length > 0) {
+          const subFolderContainer = document.createElement('div');
+          subFolderContainer.className = 'subfolder-container';
+          folderElement.appendChild(subFolderContainer);
+          renderFolderTree(folder.subFolders, subFolderContainer);
         }
+
+        container.appendChild(folderElement);
       });
     }
 
-    // Selecionar pasta e carregar seus arquivos
-    async function selectFolder(folderId, folderName) {
-      currentFolderId = folderId;
-      currentFolderName = folderName;
-
-      // Atualizar UI para mostrar pasta selecionada
-      document.querySelectorAll(".folder-item").forEach(item => {
-        item.classList.remove("selected");
-      });
-
-      const folderElement = document.querySelector(`.folder-name[data-folder-id="${folderId || ''}"]`);
-      if (folderElement) {
-        folderElement.closest(".folder-item").classList.add("selected");
-      }
-
-      // Atualizar o caminho atual
-      document.getElementById("current-folder-name").textContent = folderName;
-
-      // Carregar arquivos desta pasta
-      await loadFilesFromFolder(folderId);
-    }
-
-    // Carregar arquivos de uma pasta específica
+    // Função para carregar arquivos de uma pasta
     async function loadFilesFromFolder(folderId) {
       try {
-        allFiles = await ipcRenderer.invoke("listar-arquivos", folderId);
-        currentPage = 1;
-        searchQuery = "";
-        document.getElementById("search-input").value = "";
+        // Carregar tanto arquivos quanto pastas
+        const [files, folders] = await Promise.all([
+          ipcRenderer.invoke('get-files', folderId),
+          ipcRenderer.invoke('get-folders', folderId)
+        ]);
+
+        // Combinar arquivos e pastas em uma única lista
+        allFiles = [
+          ...folders.map(folder => ({
+            ...folder,
+            mimeType: 'application/vnd.google-apps.folder',
+            isFolder: true
+          })),
+          ...files
+        ];
+
         renderFiles();
       } catch (error) {
-        console.error("Erro ao carregar arquivos:", error);
+        console.error('Erro ao carregar arquivos:', error);
       }
     }
 
+    // Função para renderizar a lista de arquivos
     function renderFiles() {
-      const fileTableBody = document.getElementById("file-table-body");
-      fileTableBody.innerHTML = "";
+      const tableBody = document.getElementById('file-table-body');
+      tableBody.innerHTML = '';
 
-      const filtered = allFiles.filter(file =>
+      // Filtrar arquivos baseado na busca
+      const filteredFiles = allFiles.filter(file =>
         file.name.toLowerCase().includes(searchQuery)
       );
 
+      // Calcular paginação
       const startIndex = (currentPage - 1) * itemsPerPage;
       const endIndex = startIndex + itemsPerPage;
-      const currentFiles = filtered.slice(startIndex, endIndex);
+      const paginatedFiles = filteredFiles.slice(startIndex, endIndex);
 
-      if (currentFiles.length === 0) {
-        const row = document.createElement("tr");
-        const td = document.createElement("td");
-        td.colSpan = 2;
-        td.textContent = "Nenhum arquivo encontrado.";
-        td.style.textAlign = "center";
-        td.style.padding = "1rem";
-        row.appendChild(td);
-        fileTableBody.appendChild(row);
-      } else {
-        currentFiles.forEach(file => {
-          const row = document.createElement("tr");
-          row.dataset.fileId = file.id; // Armazenar ID do arquivo no elemento para referência futura
-
-          const nameTd = document.createElement("td");
-          // Adicionar ícone baseado no tipo do arquivo
-          const fileIcon = file.mimeType === "application/vnd.google-apps.document"
-            ? '<i class="fas fa-file-alt doc-icon"></i>'
-            : '<i class="fas fa-file-word docx-icon"></i>';
-
-          nameTd.innerHTML = `${fileIcon} ${file.name}`;
-          row.appendChild(nameTd);
-
-          // Célula de ações com os botões
-          const actionTd = document.createElement("td");
-          actionTd.className = "actions-cell";
-
-          // Verificar o estado de processamento deste arquivo
-          const fileState = processedFiles[file.id] || { status: 'initial', resources: {} };
-
-          // Renderizar os botões de acordo com o estado
-          if (fileState.status === 'initial') {
-            // Estado inicial: apenas botão "Criar Aula"
-            const btnCriar = document.createElement("button");
-            btnCriar.textContent = "Criar Aula";
-            btnCriar.className = "create-button";
-            btnCriar.addEventListener("click", () => startProcessingFile(file));
-            actionTd.appendChild(btnCriar);
-          }
-          else if (fileState.status === 'processing') {
-            // Estado de processamento: mostrar indicadores para cada recurso
-            const resourcesContainer = document.createElement("div");
-            resourcesContainer.className = "resources-container processing";
-
-            // Obter status de cada recurso 
-            const resourceStatus = {
-              braille: "pending",
-              audio: "pending",
-              pdf: "pending",
-              resumo: "pending"
-            };
-
-            // Verificar se temos status específicos para este arquivo
-            if (fileState.resourceStatus) {
-              Object.assign(resourceStatus, fileState.resourceStatus);
-            }
-
-            // Criar indicadores para cada recurso
-            const resources = [
-              { type: 'audio', label: 'A', tooltip: 'Áudio', buttonClass: 'audio-button' },
-              { type: 'pdf', label: 'P', tooltip: 'PDF', buttonClass: 'pdf-button' },
-              { type: 'resumo', label: '*', tooltip: 'Resumo e Questões', buttonClass: 'resumo-button' }
-            ];
-
-            resources.forEach(resource => {
-              const indicator = document.createElement("div");
-              indicator.className = `resource-indicator ${resource.buttonClass}`;
-              indicator.title = `${resource.tooltip}: ${resourceStatus[resource.type]}`;
-
-              // Adicionar ícone com base no status
-              let icon;
-              if (resourceStatus[resource.type] === 'processing') {
-                icon = '<i class="fas fa-spinner fa-spin"></i>';
-              } else if (resourceStatus[resource.type] === 'completed') {
-                icon = '<i class="fas fa-check"></i>';
-                indicator.classList.add('completed');
-              } else if (resourceStatus[resource.type] === 'error') {
-                icon = '<i class="fas fa-exclamation-triangle"></i>';
-                indicator.classList.add('error');
-              } else {
-                // Pendente
-                icon = resource.label;
-              }
-
-              indicator.innerHTML = icon;
-              resourcesContainer.appendChild(indicator);
-            });
-
-            // Calcular progresso geral
-            const resourceCount = resources.length;
-            let completedCount = 0;
-            resources.forEach(resource => {
-              if (resourceStatus[resource.type] === 'completed') {
-                completedCount++;
-              } else if (resourceStatus[resource.type] === 'error') {
-                // Contamos um erro como meia conclusão para o progresso
-                completedCount += 0.5;
-              }
-            });
-
-            // Calcular porcentagem de progresso
-            const progressPercent = Math.floor((completedCount / resourceCount) * 100);
-
-            // Adicionar texto de processamento
-            const processingText = document.createElement("div");
-            processingText.className = "processing-text";
-            processingText.textContent = `Processando... ${progressPercent}%`;
-
-            // Adicionar barra de progresso
-            const progressContainer = document.createElement("div");
-            progressContainer.className = "progress-container";
-
-            const progressBar = document.createElement("div");
-            progressBar.className = "progress-bar";
-            progressBar.style.width = `${progressPercent}%`;
-
-            progressContainer.appendChild(progressBar);
-
-            actionTd.appendChild(resourcesContainer);
-            actionTd.appendChild(processingText);
-            actionTd.appendChild(progressContainer);
-          }
-          else if (fileState.status === 'completed') {
-            // Estado concluído: botões de recursos
-            const resourcesContainer = document.createElement("div");
-            resourcesContainer.className = "resources-container";
-
-            // Debug: Mostrar links disponíveis
-            console.log(`Recursos para ${file.name}:`, {
-              audio: fileState.resources.audio,
-              pdf: fileState.resources.pdf,
-              resumo: fileState.resources.resumo
-            });
-
-            // Botão Áudio (A)
-            const btnAudio = createResourceButton('A', 'audio-button', 'Áudio', fileState.resources.audio);
-            resourcesContainer.appendChild(btnAudio);
-
-            // Botão PDF (P)
-            const btnPdf = createResourceButton('P', 'pdf-button', 'PDF', fileState.resources.pdf);
-            resourcesContainer.appendChild(btnPdf);
-
-            // Botão Resumo e Questões (*)
-            const btnResumo = createResourceButton('*', 'resumo-button', 'Resumo e Questões', fileState.resources.resumo);
-            resourcesContainer.appendChild(btnResumo);
-
-            // Adicionar detalhes de status
-            if (fileState.resourceStatus) {
-              // Botão de info com detalhes sobre status
-              const btnInfo = document.createElement('button');
-              btnInfo.className = 'resource-button info-button';
-              btnInfo.innerHTML = '<i class="fas fa-info-circle"></i>';
-              btnInfo.title = 'Detalhes do processamento';
-
-              btnInfo.addEventListener('click', () => {
-                // Criar mensagem de status detalhado
-                let message = `Status de processamento para ${file.name}:\n`;
-                for (const [type, status] of Object.entries(fileState.resourceStatus)) {
-                  message += `- ${type}: ${status}\n`;
-                }
-                alert(message);
-              });
-
-              resourcesContainer.appendChild(btnInfo);
-            }
-
-            actionTd.appendChild(resourcesContainer);
-          }
-
-          row.appendChild(actionTd);
-          fileTableBody.appendChild(row);
-        });
-      }
-
-      renderPagination(filtered.length);
-    }
-
-    // Função para criar um botão de recurso
-    function createResourceButton(label, className, tooltip, url) {
-      const btn = document.createElement("button");
-      btn.textContent = label;
-      btn.className = `resource-button ${className}`;
-      btn.title = tooltip;
-
-      console.log(`Criando botão para ${tooltip}, URL: ${url}`);
-      console.log(`URL tipo: ${typeof url}, valor: '${url}'`);
-
-      // Depuração - registrar exatamente o valor do URL
-      if (url === null) {
-        console.log(`${tooltip}: URL é null`);
-      } else if (url === undefined) {
-        console.log(`${tooltip}: URL é undefined`);
-      } else if (url === "") {
-        console.log(`${tooltip}: URL é string vazia`);
-      } else if (typeof url === 'string') {
-        console.log(`${tooltip}: URL é string válida de comprimento ${url.length}`);
-      } else {
-        console.log(`${tooltip}: URL é tipo não-string: ${typeof url}`);
-      }
-
-      // Validar URL - aceitar qualquer string não vazia
-      const validUrl = url && typeof url === 'string' && url.trim() !== '';
-
-      if (validUrl) {
-        console.log(`Botão ${tooltip} habilitado com URL: ${url}`);
-        btn.classList.add('available');
-        btn.disabled = false;
-
-        // Adicionar identificação para debug no elemento
-        btn.dataset.driveUrl = url;
-
-        btn.addEventListener("click", () => {
-          // Verificar se é URL web ou caminho de arquivo local
-          if (url.startsWith('http')) {
-            console.log(`Abrindo URL: ${url}`);
-            try {
-              // Abrir em nova janela e verificar se a janela foi aberta
-              const newWindow = window.open(url, '_blank');
-              if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-                console.warn('Popup bloqueado ou URL inválida. Tentando alternativa...');
-                // Tentar alternativa: copiando para a área de transferência
-                navigator.clipboard.writeText(url).then(() => {
-                  alert(`URL copiada para a área de transferência: ${url}`);
-                });
-              }
-            } catch (e) {
-              console.error('Erro ao abrir URL:', e);
-              alert(`Erro ao abrir URL: ${e.message}. URL: ${url}`);
-            }
-          } else {
-            console.log(`Enviando para download: ${url}`);
-            ipcRenderer.send('download-resource', url);
-          }
-        });
-      } else {
-        console.log(`Botão ${tooltip} desabilitado (sem URL válido)`);
-        btn.disabled = true;
-        btn.title += " (indisponível)";
-
-        // Adicionar ícone de reprocessamento se não estiver disponível
-        // Extrair o tipo de recurso do nome da classe (audio-button -> audio)
-        const resourceType = className.split('-')[0];
-
-        // Adicionar um botão de "retry" dentro do botão desabilitado
-        const retryIcon = document.createElement("i");
-        retryIcon.className = "fas fa-redo retry-icon";
-        retryIcon.title = `Tentar processar ${tooltip} novamente`;
-        btn.appendChild(retryIcon);
-
-        // Adicionar evento de clique no ícone de retry
-        retryIcon.addEventListener("click", (e) => {
-          e.stopPropagation(); // Impedir propagação do clique para o botão pai
-
-          // Obter o ID do arquivo da linha da tabela
-          const fileId = e.target.closest('tr').dataset.fileId;
-          if (fileId) {
-            console.log(`Reprocessando ${resourceType} para fileId=${fileId}`);
-            reprocessResource(fileId, resourceType);
-          }
-        });
-      }
-
-      return btn;
-    }
-
-    // Função para iniciar o processamento de um arquivo
-    async function startProcessingFile(file) {
-      // Atualizar estado para 'processing'
-      processedFiles[file.id] = {
-        status: 'processing',
-        resources: {
-          braille: null,
-          audio: null,
-          pdf: null,
-          resumo: null
-        },
-        fileName: file.name
-      };
-
-      // Salvar estado e atualizar interface
-      saveProcessedFilesState();
-      renderFiles();
-
-      try {
-        // Chamar o método para iniciar o processamento paralelo
-        const result = await ipcRenderer.invoke("gerar-aula", file.id, file.name);
-
-        if (result.error) {
-          // Em caso de erro, voltar para o estado inicial
-          processedFiles[file.id].status = 'initial';
-          alert("Erro: " + result.error);
-        } else {
-          console.log("Processamento iniciado com sucesso:", result);
-          // Não precisamos fazer nada aqui, pois o estado será atualizado via 'resource-update'
-          // O backend enviará atualizações assíncronas conforme os recursos ficarem prontos
-        }
-      } catch (error) {
-        console.error("Erro ao iniciar processamento:", error);
-        processedFiles[file.id].status = 'initial';
-        alert("Erro ao iniciar processamento: " + error.message);
-
-        // Salvar estado e atualizar interface
-        saveProcessedFilesState();
-        renderFiles();
-      }
-    }
-
-    // Função para reprocessar um recurso específico
-    async function reprocessResource(fileId, resourceType) {
-      if (!processedFiles[fileId]) {
-        console.error("Arquivo não encontrado no estado de processamento:", fileId);
-        return;
-      }
-
-      // Encontrar o arquivo nos arquivos listados
-      const file = allFiles.find(f => f.id === fileId);
-      if (!file) {
-        console.error("Arquivo não encontrado na lista atual:", fileId);
-        return;
-      }
-
-      // Desabilitar o botão temporariamente (será atualizado na renderização)
-      const resourceButton = document.querySelector(`tr[data-file-id="${fileId}"] .${resourceType}-button`);
-      if (resourceButton) {
-        resourceButton.disabled = true;
-        resourceButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-      }
-
-      try {
-        // Chamar o método para processar apenas este recurso
-        await ipcRenderer.invoke("process-resource", {
-          fileId: fileId,
-          resourceType: resourceType,
-          fileName: file.name,
-          // Se tivermos o caminho local do arquivo, enviar também
-          filePath: processedFiles[fileId].localPath || null
-        });
-
-        // A atualização do estado será feita pelo listener de 'resource-update'
-      } catch (error) {
-        console.error(`Erro ao reprocessar ${resourceType} para ${fileId}:`, error);
-        alert(`Erro ao processar ${resourceType}: ${error.message}`);
-
-        // Restaurar o botão
-        renderFiles();
-      }
-    }
-
-    function renderPagination(totalFiltered) {
-      const paginationEl = document.getElementById("pagination");
-      paginationEl.innerHTML = "";
-
-      if (totalFiltered === 0) return;
-
-      const totalPages = Math.ceil(totalFiltered / itemsPerPage);
-
-      const btnPrev = document.createElement("button");
-      btnPrev.innerHTML = '<i class="fas fa-chevron-left"></i>';
-      btnPrev.disabled = (currentPage === 1);
-      btnPrev.addEventListener("click", () => {
-        if (currentPage > 1) {
-          currentPage--;
-          renderFiles();
-        }
+      // Renderizar arquivos
+      paginatedFiles.forEach(file => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>
+            <i class="fas ${getFileIcon(file.mimeType)}"></i>
+            ${file.name}
+          </td>
+          <td class="actions-column">
+            ${file.isFolder ? '' : `
+              <button class="action-button" onclick="downloadFile('${file.id}')" title="Baixar arquivo">
+                <i class="fas fa-download"></i>
+              </button>
+            `}
+          </td>
+        `;
+        tableBody.appendChild(row);
       });
-      paginationEl.appendChild(btnPrev);
+
+      // Renderizar paginação
+      renderPagination(filteredFiles.length);
+    }
+
+    // Função para renderizar a paginação
+    function renderPagination(totalItems) {
+      const totalPages = Math.ceil(totalItems / itemsPerPage);
+      const pagination = document.getElementById('pagination');
+      pagination.innerHTML = '';
 
       for (let i = 1; i <= totalPages; i++) {
-        const btnPage = document.createElement("button");
-        btnPage.textContent = i.toString();
-        if (i === currentPage) {
-          btnPage.classList.add("active");
-        }
-        btnPage.addEventListener("click", () => {
+        const button = document.createElement('button');
+        button.textContent = i;
+        button.className = i === currentPage ? 'active' : '';
+        button.addEventListener('click', () => {
           currentPage = i;
           renderFiles();
         });
-        paginationEl.appendChild(btnPage);
+        pagination.appendChild(button);
       }
+    }
 
-      const btnNext = document.createElement("button");
-      btnNext.innerHTML = '<i class="fas fa-chevron-right"></i>';
-      btnNext.disabled = (currentPage === totalPages);
-      btnNext.addEventListener("click", () => {
-        if (currentPage < totalPages) {
-          currentPage++;
-          renderFiles();
-        }
-      });
-      paginationEl.appendChild(btnNext);
+    // Função para obter o ícone correto baseado no tipo de arquivo
+    function getFileIcon(mimeType) {
+      if (mimeType.includes('folder')) return 'fa-folder';
+      if (mimeType.includes('document')) return 'fa-file-word';
+      if (mimeType.includes('pdf')) return 'fa-file-pdf';
+      if (mimeType.includes('image')) return 'fa-file-image';
+      if (mimeType.includes('audio')) return 'fa-file-audio';
+      if (mimeType.includes('video')) return 'fa-file-video';
+      return 'fa-file';
+    }
+
+    // Função para download de arquivo
+    function downloadFile(fileId) {
+      ipcRenderer.send('download-resource', fileId);
     }
   </script>
 </body>
